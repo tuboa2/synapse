@@ -1,0 +1,48 @@
+[project]
+name = "synapse"
+version = "0.1.0"
+description = "Synapse: Cross-platform multi-process Python daemon for local process telemetry"
+requires-python = ">=3.12"
+dependencies = [
+    "pyside6>=6.6.0",
+    "duckdb>=0.10.0",
+    "pynput>=1.7.6",
+]
+
+[project.optional-dependencies]
+linux = []
+windows-macos = [
+    "psutil"
+]
+build = [
+    "nuitka>=2.0"
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "mypy>=1.8.0",
+    "ruff>=0.2.0",
+    "nuitka>=2.0.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM", "ARG"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
