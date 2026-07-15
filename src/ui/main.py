@@ -16,7 +16,9 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 
 from ipc.unix_socket import UnixSocketClient
+from ipc.zero_copy import ZeroCopyTelemetryClient
 from ui.hotkeys import GlobalHotkeyManager
+import uvloop
 
 logger = logging.getLogger("synapse.ui")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -29,6 +31,10 @@ class IPCWorker(QObject):
         super().__init__()
         self.socket_path = socket_path
         self.client = UnixSocketClient(self.socket_path)
+        self.shm_client = ZeroCopyTelemetryClient()
+        
+        # Install uvloop for this thread before creating the loop
+        uvloop.install()
         self.loop = asyncio.new_event_loop()
         self.thread = threading.Thread(target=self._run_loop, daemon=True, name="IPCWorkerThread")
 
@@ -43,19 +49,16 @@ class IPCWorker(QObject):
         asyncio.run_coroutine_threadsafe(self._async_send(cmd_str), self.loop)
 
     def fetch_telemetry(self) -> None:
-        asyncio.run_coroutine_threadsafe(self._async_fetch(), self.loop)
-
-    async def _async_fetch(self) -> None:
-        try:
-            await self.client.connect()
-            await self.client.send_message({"command": "get_telemetry"})
-            response = await self.client.receive_message()
-            
-            if response.get("status") == "ok":
-                self.telemetry_received.emit(response.get("data", []))
-            await self.client.disconnect()
-        except Exception as e:
-            logger.debug(f"IPC Fetch failed: {e}")
+        data = self.shm_client.read_telemetry()
+        if data:
+            telemetry_dict = {
+                "pid": data.pid,
+                "cpu_usage_percent": data.cpu_usage_percent,
+                "memory_usage_mb": data.memory_usage_mb,
+                "io_wait_ms": data.io_wait_ms,
+                "gil_contention_ms": data.gil_contention_ms
+            }
+            self.telemetry_received.emit([telemetry_dict])
 
     async def _async_send(self, cmd_str: str) -> None:
         try:
@@ -120,6 +123,7 @@ class UIController(QObject):
 
 def run_ui() -> None:
     # QGuiApplication avoids QtWidgets overhead, achieving extreme lightweight startup
+    uvloop.install()
     app = QGuiApplication(sys.argv)
     
     ipc_worker = IPCWorker()
@@ -138,6 +142,13 @@ def run_ui() -> None:
     if not engine.rootObjects():
         logger.error("Failed to load QML root objects.")
         sys.exit(-1)
+        
+    if "--train" in sys.argv:
+        logger.info("PGO Training Mode: Executing hot paths...")
+        for _ in range(100):
+            ipc_worker.fetch_telemetry()
+        QTimer.singleShot(100, app.quit)
+        sys.exit(app.exec())
 
     # Initialize non-blocking Global Hotkeys
     hotkeys = GlobalHotkeyManager()

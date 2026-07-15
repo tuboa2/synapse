@@ -6,6 +6,9 @@ from typing import Any, Dict
 from domain.database import TelemetryDatabase
 from ipc.unix_socket import UnixSocketServer
 from telemetry.factory import create_telemetry_provider
+from ipc.zero_copy import ZeroCopyTelemetryServer, TelemetryData, SHM_NAME
+import time
+import uvloop
 
 logging.basicConfig(
     level=logging.INFO, 
@@ -23,6 +26,7 @@ class Daemon:
         self.db = TelemetryDatabase()
         self.telemetry_engine = create_telemetry_provider()
         self.server = UnixSocketServer(socket_path, self.handle_ipc_message)
+        self.shm_server = ZeroCopyTelemetryServer()
         self._running = False
         self._telemetry_task: asyncio.Task[None] | None = None
         
@@ -34,22 +38,7 @@ class Daemon:
         if command == "ping":
             return {"status": "ok", "message": "pong"}
         elif command == "get_telemetry":
-            try:
-                records = await self.db.get_recent_telemetry(limit=50)
-                # Serialize records to standard Python types
-                serialized = [
-                    {
-                        "timestamp": str(r[0]),
-                        "pid": r[1],
-                        "cpu_usage": r[2],
-                        "memory_usage": r[3]
-                    }
-                    for r in records
-                ]
-                return {"status": "ok", "data": serialized}
-            except Exception as e:
-                logger.error(f"Database query failed: {e}")
-                return {"status": "error", "message": "Failed to fetch telemetry"}
+            return {"status": "ok", "shm_name": SHM_NAME}
                 
         return {"status": "error", "message": "unknown command"}
 
@@ -60,6 +49,7 @@ class Daemon:
         """
         logger.info("Starting telemetry aggregation loop")
         self.telemetry_engine.initialize()
+        self.shm_server.initialize()
         try:
             while self._running:
                 # Target PID 1 (init/systemd) as an example target, normally received via IPC/Config
@@ -67,6 +57,16 @@ class Daemon:
                 metrics = self.telemetry_engine.get_metrics(target_pid)
                 
                 if metrics:
+                    shm_data = TelemetryData(
+                        timestamp=time.time(),
+                        pid=metrics.pid,
+                        cpu_usage_percent=metrics.cpu_usage_percent,
+                        memory_usage_mb=metrics.memory_usage_mb,
+                        io_wait_ms=getattr(metrics, 'io_wait_ms', 0),
+                        gil_contention_ms=getattr(metrics, 'gil_contention_ms', 0)
+                    )
+                    self.shm_server.write_telemetry(shm_data)
+
                     await self.db.insert_telemetry(
                         pid=metrics.pid, 
                         cpu=metrics.cpu_usage_percent, 
@@ -79,6 +79,7 @@ class Daemon:
             logger.info("Telemetry loop cancelled")
         finally:
             self.telemetry_engine.cleanup()
+            self.shm_server.cleanup()
 
     async def start(self) -> None:
         """Initialize server and begin telemetry aggregation."""
@@ -124,6 +125,7 @@ class Daemon:
 
 
 def run_daemon() -> None:
+    uvloop.install()
     daemon = Daemon()
     try:
         asyncio.run(daemon.start())

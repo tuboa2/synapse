@@ -83,15 +83,33 @@ log_info "Initializing Nuitka Compilation..."
 # Execute Nuitka via uv to ensure we use the virtual environment's dependencies
 # Rationale for flags:
 # --standalone: Creates a self-contained directory with the executable and all shared libraries (no system python required).
-# --lto=yes: Link-Time Optimization. Crucial for C++ compilation, it allows the compiler to inline code across translation units, reducing binary size and increasing execution speed.
+# --lto=no: Link-Time Optimization is disabled for BRUTAL build speed. (Change to 'yes' only for final production releases).
+# --clang: Forces the use of the Clang compiler, which compiles Nuitka's generated C code significantly faster than GCC/MSVC.
+# --jobs: Maximizes parallel compilation using all available logical CPU cores.
 # --enable-plugin=pyside6: Specifically hooks into PySide6 to bundle Qt QML/C++ libraries correctly.
-# --nofollow-import-to: Aggressive static tree-shaking to prevent bloating the binary with unused standard libraries (e.g., tkinter, unittest, email).
+# --nofollow-import-to: Aggressive static tree-shaking to prevent bloating the binary with unused standard libraries.
 # --remove-output: Cleans up the massive C++ build cache after successful compilation to save disk space.
 # --output-dir: Routes output cleanly to the dist/ folder.
+
+# Dynamically get CPU core count for maximum parallelization
+if command -v python3 &> /dev/null; then
+  CORES=$(python3 -c 'import os; print(os.cpu_count() or 4)')
+else
+  CORES=4
+fi
+
+# BARE-METAL OPTIMIZATION: Extreme hardware-specific C-level optimization.
+# -march=native: Unlock CPU specific extensions (AVX, BMI).
+# -O3: Maximum performance.
+export CFLAGS="-march=native -O3 -fno-math-errno -fno-trapping-math -fomit-frame-pointer -pipe"
+export LDFLAGS="-Wl,-O3 -Wl,--as-needed -Wl,--gc-sections -s"
 
 uv run nuitka \
   --standalone \
   --lto=yes \
+  --pgo-c \
+  --pgo-args="--train" \
+  --jobs="$CORES" \
   --enable-plugin=pyside6 \
   --nofollow-import-to=tkinter \
   --nofollow-import-to=unittest \
@@ -99,7 +117,6 @@ uv run nuitka \
   --nofollow-import-to=http \
   --nofollow-import-to=xmlrpc \
   --output-dir="$OUT_DIR" \
-  --remove-output \
   --output-filename="$OUTPUT_NAME" \
   "${NUITKA_PLATFORM_FLAGS[@]}" \
   "$MAIN_ENTRY"
