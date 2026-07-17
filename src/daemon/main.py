@@ -7,6 +7,7 @@ from domain.database import TelemetryDatabase
 from ipc.unix_socket import UnixSocketServer
 from telemetry.factory import create_telemetry_provider
 from ipc.zero_copy import ZeroCopyTelemetryServer, TelemetryData, SHM_NAME
+from daemon.discovery import ProcessDiscovery
 import time
 import uvloop
 
@@ -52,31 +53,38 @@ class Daemon:
         self.shm_server.initialize()
         try:
             while self._running:
-                # Target PID 1 (init/systemd) as an example target, normally received via IPC/Config
-                target_pid = 1 
-                metrics = self.telemetry_engine.get_metrics(target_pid)
+                python_procs = ProcessDiscovery.get_python_pids()
+                shm_data_list = []
                 
-                if metrics:
-                    shm_data = TelemetryData(
-                        timestamp=time.time(),
-                        pid=metrics.pid,
-                        cpu_usage_percent=metrics.cpu_usage_percent,
-                        memory_usage_mb=metrics.memory_usage_mb,
-                        io_wait_ms=getattr(metrics, 'io_wait_ms', 0),
-                        gil_contention_ms=getattr(metrics, 'gil_contention_ms', 0)
-                    )
-                    self.shm_server.write_telemetry(shm_data)
+                for pid, script_name in python_procs:
+                    metrics = self.telemetry_engine.get_metrics(pid)
+                    
+                    if metrics:
+                        shm_data = TelemetryData(
+                            timestamp=time.time(),
+                            pid=metrics.pid,
+                            name=script_name,
+                            cpu_usage_percent=metrics.cpu_usage_percent,
+                            memory_usage_mb=metrics.memory_usage_mb,
+                            io_wait_ms=int(getattr(metrics, 'io_wait_ms', 0)),
+                            gil_contention_ms=int(getattr(metrics, 'gil_contention_ms', 0))
+                        )
+                        shm_data_list.append(shm_data)
 
-                    await self.db.insert_telemetry(
-                        pid=metrics.pid, 
-                        cpu=metrics.cpu_usage_percent, 
-                        memory=metrics.memory_usage_mb
-                    )
+                        await self.db.insert_telemetry(
+                            pid=metrics.pid, 
+                            cpu=metrics.cpu_usage_percent, 
+                            memory=metrics.memory_usage_mb
+                        )
+                
+                self.shm_server.write_telemetry(shm_data_list)
                 
                 # Yield control to event loop; prevents CPU hogging
                 await asyncio.sleep(1.0)
         except asyncio.CancelledError:
             logger.info("Telemetry loop cancelled")
+        except Exception as e:
+            logger.exception(f"Fatal error in telemetry loop: {e}")
         finally:
             self.telemetry_engine.cleanup()
             self.shm_server.cleanup()
