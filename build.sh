@@ -16,7 +16,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 PROJECT_ROOT="${SCRIPT_DIR}"
 SRC_DIR="${PROJECT_ROOT}/src"
 OUT_DIR="${PROJECT_ROOT}/dist"
-MAIN_ENTRY="${SRC_DIR}/ui/main.py" # Or the combined entrypoint depending on target
+MAIN_ENTRY="${SRC_DIR}/cli/main.py" # Or the combined entrypoint depending on target
 
 # Helper function for logging
 log_info() {
@@ -52,6 +52,7 @@ case "$OS" in
     # On Linux, standalone bundles .so files. 
     # Onefile can also be used if a single binary is desired, but standalone is better for size debugging.
     NUITKA_PLATFORM_FLAGS=(
+      "--clang"
       # "--linux-icon=assets/icon.png" # Scaffolded
     )
     ;;
@@ -59,6 +60,7 @@ case "$OS" in
     log_info "Configuring build for macOS (.app bundle)..."
     OUTPUT_NAME="Synapse"
     NUITKA_PLATFORM_FLAGS=(
+      "--clang"
       "--macos-create-app-bundle"
       "--macos-app-name=Synapse"
       "--macos-app-mode=gui"
@@ -77,6 +79,9 @@ case "$OS" in
     exit 1
     ;;
 esac
+
+log_info "Cleaning previous build..."
+rm -rf "$OUT_DIR"
 
 log_info "Initializing Nuitka Compilation..."
 
@@ -101,19 +106,26 @@ fi
 # BARE-METAL OPTIMIZATION: Extreme hardware-specific C-level optimization.
 # -march=native: Unlock CPU specific extensions (AVX, BMI).
 # -O3: Maximum performance.
-export CFLAGS="-march=native -O3 -fno-math-errno -fno-trapping-math -fomit-frame-pointer -pipe"
-export LDFLAGS="-Wl,-O3 -Wl,--as-needed -Wl,--gc-sections -s"
+if [[ "$OS" == "Linux"* ]]; then
+  export CFLAGS="-march=native -O3 -fno-math-errno -fno-trapping-math -fomit-frame-pointer -pipe"
+  export LDFLAGS="-fuse-ld=mold -Wl,-O3 -Wl,--as-needed -Wl,--gc-sections -s"
+elif [[ "$OS" == "Darwin"* ]]; then
+  export CFLAGS="-O3"
+fi
+
+# Fix for Nuitka patchelf bug with PySide6 leftover object files
+if [[ -d ".venv" ]]; then
+  log_info "Cleaning PySide6 leftover object files to prevent patchelf errors..."
+  find .venv -name "*.o" -type f -delete
+fi
 
 uv run nuitka \
-  --standalone \
-  --lto=yes \
-  --pgo-c \
-  --pgo-args="--train" \
+  --onefile \
+  --lto=no \
   --jobs="$CORES" \
-  --enable-plugin=pyside6 \
+  --include-package=uvloop \
   --nofollow-import-to=tkinter \
   --nofollow-import-to=unittest \
-  --nofollow-import-to=email \
   --nofollow-import-to=http \
   --nofollow-import-to=xmlrpc \
   --output-dir="$OUT_DIR" \
