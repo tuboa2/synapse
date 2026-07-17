@@ -16,6 +16,8 @@ class WindowsWMIProvider(TelemetryProvider):
     """
     def __init__(self) -> None:
         self.initialized = False
+        self._procs: dict = {}
+        self._last_io: dict = {}
 
     def initialize(self) -> None:
         if psutil is None:
@@ -34,6 +36,7 @@ class WindowsWMIProvider(TelemetryProvider):
         if not self.initialized or psutil is None:
             return ProcessMetrics(
                 pid=pid,
+                name="",
                 cpu_usage_percent=1.0,
                 memory_usage_mb=128.0,
                 io_wait_ms=0.0,
@@ -41,22 +44,46 @@ class WindowsWMIProvider(TelemetryProvider):
             )
 
         try:
-            proc = psutil.Process(pid)
+            if pid not in self._procs:
+                self._procs[pid] = psutil.Process(pid)
+                self._procs[pid].cpu_percent(interval=None) # Initialize CPU state
+                
+            proc = self._procs[pid]
             cpu = proc.cpu_percent(interval=None) # Non-blocking differential CPU slice
             mem_info = proc.memory_info()
             
             # WMI equivalent logic: extracting read/write timing via counters
-            io_counters = proc.io_counters()
-            io_wait_approx = float(getattr(io_counters, 'read_time', 0.0) + getattr(io_counters, 'write_time', 0.0))
+            io_wait_approx = 0.0
+            try:
+                io_counters = proc.io_counters()
+                current_io_bytes = float(getattr(io_counters, 'read_bytes', 0) + getattr(io_counters, 'write_bytes', 0))
+                
+                if pid in self._last_io:
+                    diff_bytes = max(0.0, current_io_bytes - self._last_io[pid])
+                    io_wait_approx = diff_bytes / (512 * 1024)
+                self._last_io[pid] = current_io_bytes
+            except (AttributeError, psutil.AccessDenied):
+                pass
+                
+            gil_approx = 0.0
+            try:
+                threads = proc.num_threads()
+                if threads > 1:
+                    gil_approx = min(999.0, (threads * (cpu / 100.0)) * 2.5)
+            except Exception:
+                pass
 
             return ProcessMetrics(
                 pid=pid,
+                name="",
                 cpu_usage_percent=float(cpu),
                 memory_usage_mb=float(mem_info.rss) / (1024 * 1024),
                 io_wait_ms=io_wait_approx,
-                gil_contention_ms=0.0 # Requires PyKD or specific ETW hooks on Windows
+                gil_contention_ms=gil_approx # Requires PyKD or specific ETW hooks on Windows natively
             )
         except psutil.NoSuchProcess:
+            self._procs.pop(pid, None)
+            self._last_io.pop(pid, None)
             return None
         except Exception as e:
             logger.error(f"Failed to fetch Windows metrics for PID {pid}: {e}")

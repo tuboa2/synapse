@@ -9,6 +9,7 @@ class ProcessMetrics:
     Ensures rigorous type-safety and consistency across all OS implementations.
     """
     pid: int
+    name: str
     cpu_usage_percent: float
     memory_usage_mb: float
     io_wait_ms: float

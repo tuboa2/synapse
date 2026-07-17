@@ -52,6 +52,8 @@ class LinuxEBPFProvider(TelemetryProvider):
     """
     def __init__(self) -> None:
         self.bpf: Optional[Any] = None
+        self._procs: dict = {}
+        self._last_io: dict = {}
 
     def initialize(self) -> None:
         if BPF is None:
@@ -74,14 +76,54 @@ class LinuxEBPFProvider(TelemetryProvider):
 
     def get_metrics(self, pid: int) -> Optional[ProcessMetrics]:
         if self.bpf is None:
-            # Fallback for execution environment testing where BCC isn't available
-            return ProcessMetrics(
-                pid=pid,
-                cpu_usage_percent=2.5,
-                memory_usage_mb=256.0,
-                io_wait_ms=0.5,
-                gil_contention_ms=0.0
-            )
+            # Fallback using psutil when BCC isn't available
+            import psutil
+            try:
+                if pid not in self._procs:
+                    self._procs[pid] = psutil.Process(pid)
+                    self._procs[pid].cpu_percent(interval=None) # Initialize CPU state
+                    
+                proc = self._procs[pid]
+                cpu = proc.cpu_percent(interval=None)
+                mem_info = proc.memory_info()
+                
+                io_wait_approx = 0.0
+                try:
+                    io_counters = proc.io_counters()
+                    # Use read_bytes and write_bytes delta as a proxy for I/O intensity
+                    current_io_bytes = float(getattr(io_counters, 'read_bytes', 0) + getattr(io_counters, 'write_bytes', 0))
+                    
+                    if pid in self._last_io:
+                        diff_bytes = max(0.0, current_io_bytes - self._last_io[pid])
+                        # Heuristic: 1ms I/O wait per 512KB transferred (visually responsive for dashboards)
+                        io_wait_approx = diff_bytes / (512 * 1024)
+                    self._last_io[pid] = current_io_bytes
+                except (AttributeError, psutil.AccessDenied):
+                    pass
+                
+                # Estimate GIL contention (Fallback heuristic since native eBPF USDT is unavailable)
+                # GIL contention correlates heavily with number of threads and context switching
+                gil_approx = 0.0
+                try:
+                    threads = proc.num_threads()
+                    if threads > 1:
+                        # If CPU is maxed, GIL contention is roughly proportional to threads
+                        gil_approx = min(999.0, (threads * (cpu / 100.0)) * 2.5)
+                except Exception:
+                    pass
+
+                return ProcessMetrics(
+                    pid=pid,
+                    name="", # Name is populated by caller
+                    cpu_usage_percent=float(cpu),
+                    memory_usage_mb=float(mem_info.rss) / (1024 * 1024),
+                    io_wait_ms=io_wait_approx,
+                    gil_contention_ms=gil_approx
+                )
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                self._procs.pop(pid, None)
+                self._last_io.pop(pid, None)
+                return None
 
         try:
             # Extract high-resolution io wait delta directly from Kernel BPF hash map
@@ -96,7 +138,8 @@ class LinuxEBPFProvider(TelemetryProvider):
 
             return ProcessMetrics(
                 pid=pid,
-                cpu_usage_percent=0.0, # Handled via CPU frequency sampling in full implementations
+                name="",
+                cpu_usage_percent=0.0, # eBPF implementation omitted for brevity
                 memory_usage_mb=float(memory_mb),
                 io_wait_ms=float(io_ns) / 1_000_000.0,
                 gil_contention_ms=0.0  # Would be extracted via USDT Python hook
