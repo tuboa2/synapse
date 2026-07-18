@@ -1,0 +1,29 @@
+{
+  "tables": {
+    "syscalls": {
+      "columns": {
+        "pid": "int",
+        "comm": "string",
+        "syscall_name": "string",
+        "latency_us": "int"
+      }
+    },
+    "tcp_events": {
+      "columns": {
+        "pid": "int",
+        "comm": "string",
+        "saddr": "string",
+        "daddr": "string",
+        "dport": "int",
+        "bytes_sent": "int"
+      }
+    }
+  },
+  "allowed_functions": [
+    "COUNT",
+    "SUM",
+    "AVG",
+    "MIN",
+    "MAX"
+  ]
+}
