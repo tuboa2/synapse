@@ -105,11 +105,11 @@ This strips the Python interpreter and unused standard libraries entirely, produ
 
 1. Review the defensive compilation script:
    ```bash
-   cat build_nuitka.sh
+   cat build.sh
    ```
 2. Execute the build pipeline:
    ```bash
-   ./build_nuitka.sh
+   ./build.sh
    ```
 3. Locate your compiled binary in the `dist/` directory.
 
