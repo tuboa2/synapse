@@ -1,0 +1,30 @@
+{
+  "tables": {
+    "syscalls": {
+      "platforms": {
+        "linux": {
+          "probe_type": "tracepoint",
+          "probe_entry": "raw_syscalls:sys_enter",
+          "probe_exit": "raw_syscalls:sys_exit",
+          "fields": {
+            "pid": "bpf_get_current_pid_tgid() >> 32",
+            "comm": "bpf_get_current_comm",
+            "syscall_name": "args->id",
+            "latency_us": "latency_calculation_macro"
+          }
+        },
+        "macos": {
+          "probe_type": "dtrace",
+          "probe_entry": "syscall:::entry",
+          "probe_exit": "syscall:::return",
+          "fields": {
+            "pid": "pid",
+            "comm": "execname",
+            "syscall_name": "probefunc",
+            "latency_us": "latency_calculation"
+          }
+        }
+      }
+    }
+  }
+}
