@@ -16,7 +16,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 PROJECT_ROOT="${SCRIPT_DIR}"
 SRC_DIR="${PROJECT_ROOT}/src"
 OUT_DIR="${PROJECT_ROOT}/dist"
-MAIN_ENTRY="${SRC_DIR}/cli/main.py" # Or the combined entrypoint depending on target
+MAIN_ENTRY="${PROJECT_ROOT}/run.py" # Use top-level run script to avoid module conflict
 
 # Helper function for logging
 log_info() {

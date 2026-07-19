@@ -10,11 +10,15 @@
 
 Synapse is a local-first, zero-overhead performance telemetry application designed specifically for live Python environments. 
 
+> [!IMPORTANT]
+> **Beta Release Coming Soon:** I am currently stabilizing the core engine and AOT pipeline. Expect a comprehensive beta release in the near future!
+
 ---
 
 ## ✨ Architectural Highlights
 
 - **Near-Zero Overhead Telemetry**: Implements an OS-aware abstract factory. On Linux, it injects custom C structures into Kernel **eBPF tracepoints** via `bcc-tools` to intercept block I/O without costly context switching. Fallbacks utilize `psutil` (Windows) and `DTrace` (macOS).
+- **Declarative SQL-to-Tracepoint Transpiler**: Write DuckDB-dialect SQL queries to declaratively extract telemetry. Synapse parses, validates, and transpiles the SQL directly into secure eBPF C-code hook configurations in a <15ms 4-stage pipeline.
 - **Sub-50ms Terminal UI**: The frontend is a lightweight asyncio-driven CLI that renders instantly without graphical overhead.
 - **Asynchronous IPC**: The CLI and the background daemon run in entirely separate processes. They communicate via a strictly non-blocking Unix Domain Socket (`asyncio`), ensuring responsiveness regardless of backend load.
 - **Embedded Analytical Datastore**: Leverages **DuckDB** for lightning-fast, SQL-driven telemetry aggregation and historical time-series analytics within the daemon.
@@ -39,8 +43,15 @@ graph TD
         UDS <-->|Async Event Loop| D[Daemon Loop]
         D -->|Store| DB[(DuckDB)]
         
+        subgraph Transpiler Pipeline
+            D -->|SQL Query| Parser[AST Parser]
+            Parser --> Validator[Schema Validator]
+            Validator --> Mapper[AST Mapper]
+            Mapper --> Emitter[Code Emitter]
+        end
+        
         subgraph Telemetry Interface
-            D -->|Factory Request| TF[Telemetry Factory]
+            Emitter -->|Generated Code| TF[Telemetry Factory]
             TF -->|Linux| eBPF[eBPF / BCC]
             TF -->|macOS| DTrace[DTrace]
             TF -->|Windows| WMI[WMI / psutil]
@@ -57,10 +68,11 @@ graph TD
 ```text
 src/
 ├── cli/             # Terminal-based CLI UI
-├── daemon/        # Background daemon and asyncio event loop orchestration
-├── telemetry/     # Abstracted OS telemetry instrumentation (eBPF, WMI, DTrace)
-├── ipc/           # Decoupled Unix socket servers and clients
-└── domain/        # DuckDB datastores and immutable domain data models
+├── daemon/          # Background daemon and asyncio event loop orchestration
+├── transpiler/      # 4-stage SQL-to-eBPF transpilation engine
+├── telemetry/       # Abstracted OS telemetry instrumentation (eBPF, WMI, DTrace)
+├── ipc/             # Decoupled Unix socket servers and clients
+└── domain/          # DuckDB datastores and immutable domain data models
 ```
 
 ---

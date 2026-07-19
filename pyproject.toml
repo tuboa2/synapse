@@ -24,7 +24,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/daemon", "src/domain", "src/ipc", "src/telemetry", "src/cli"]
+packages = ["src/daemon", "src/domain", "src/ipc", "src/telemetry", "src/cli", "src/transpiler"]
 
 [dependency-groups]
 dev = [

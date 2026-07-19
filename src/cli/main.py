@@ -12,6 +12,11 @@ from ipc.zero_copy import ZeroCopyTelemetryClient
 from daemon.main import run_daemon
 import uvloop
 
+import sqlglot
+from transpiler.validator import ASTValidator
+from transpiler.mapper import ASTMapper
+from transpiler.emitter import QueryEmitter
+
 logger = logging.getLogger("synapse.cli")
 # Disable standard logging output since we'll be taking over the screen
 logging.getLogger().setLevel(logging.ERROR)
@@ -118,8 +123,54 @@ async def run_cli() -> None:
         sys.stdout.write('\033[?25h\033[0m\n')
         sys.stdout.flush()
 
+def transpile_query(query: str) -> None:
+    # Get base dir (assuming src/cli/main.py -> src)
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    schema_path = os.path.join(base_dir, "schema_registry.json")
+    matrix_path = os.path.join(base_dir, "tracepoint_matrix.json")
+    
+    with open(schema_path, "r") as f:
+        schema = json.load(f)
+    with open(matrix_path, "r") as f:
+        matrix = json.load(f)
+        
+    print(f"\033[1;36m[Transpiler] Parsing SQL query...\033[0m")
+    try:
+        # 1. Parse
+        ast = sqlglot.parse_one(query, dialect="duckdb")
+        
+        # 2. Validate
+        validator = ASTValidator(schema)
+        validator.validate(ast)
+        print(f"\033[1;32m[Transpiler] Validation Passed.\033[0m")
+        
+        # 3. Map
+        mapper = ASTMapper(matrix, platform="linux")
+        mapped_query = mapper.map(ast)
+        print(f"\033[1;32m[Transpiler] Mapping Passed (Platform: linux).\033[0m")
+        
+        # 4. Emit
+        emitter = QueryEmitter()
+        code = emitter.emit(mapped_query)
+        print(f"\n\033[1;33m--- Generated eBPF C Code ---\033[0m\n")
+        print(code)
+        print(f"\033[1;33m-----------------------------\033[0m\n")
+        
+    except Exception as e:
+        print(f"\033[1;31m[Transpiler Error] {e}\033[0m")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     multiprocessing.freeze_support()
+    
+    parser = argparse.ArgumentParser(description="Synapse Telemetry Daemon")
+    parser.add_argument("--query", type=str, help="Transpile a SQL query into eBPF C code and exit")
+    args = parser.parse_args()
+    
+    if args.query:
+        transpile_query(args.query)
+        sys.exit(0)
     
     # Spawn the background daemon silently
     daemon_process = multiprocessing.Process(target=start_daemon_process, daemon=True)
