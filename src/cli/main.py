@@ -21,7 +21,7 @@ logger = logging.getLogger("synapse.cli")
 # Disable standard logging output since we'll be taking over the screen
 logging.getLogger().setLevel(logging.ERROR)
 
-def start_daemon_process():
+def start_daemon_process(query: Optional[str] = None):
     """Run the daemon in a background process and log to a file."""
     log_file = open("synapse_daemon.log", "a")
     sys.stdout = log_file
@@ -37,7 +37,7 @@ def start_daemon_process():
         stream=log_file
     )
     
-    run_daemon()
+    run_daemon(query=query)
 
 
 class IPCWorker:

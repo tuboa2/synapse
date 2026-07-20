@@ -23,7 +23,7 @@ class TelemetryProvider(abc.ABC):
     """
     
     @abc.abstractmethod
-    def initialize(self) -> None:
+    def initialize(self, query: Optional[str] = None) -> None:
         """Initialize any system-level probes, memory maps, or hooks required."""
         pass
 

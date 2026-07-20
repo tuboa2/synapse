@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import signal
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from domain.database import TelemetryDatabase
 from ipc.unix_socket import UnixSocketServer
@@ -22,8 +22,9 @@ class Daemon:
     Background Daemon orchestrating telemetry collection and IPC handling.
     Runs completely decoupled from the UI.
     """
-    def __init__(self, socket_path: str = "/tmp/synapse.sock") -> None:
+    def __init__(self, socket_path: str = "/tmp/synapse.sock", query: Optional[str] = None) -> None:
         self.socket_path = socket_path
+        self.query = query
         self.db = TelemetryDatabase()
         self.telemetry_engine = create_telemetry_provider()
         self.server = UnixSocketServer(socket_path, self.handle_ipc_message)
@@ -49,7 +50,7 @@ class Daemon:
         Strictly utilizes asyncio.sleep to yield execution and prevent busy-waiting.
         """
         logger.info("Starting telemetry aggregation loop")
-        self.telemetry_engine.initialize()
+        self.telemetry_engine.initialize(query=self.query)
         self.shm_server.initialize()
         try:
             while self._running:
@@ -132,9 +133,9 @@ class Daemon:
         logger.info("Daemon shutdown complete")
 
 
-def run_daemon() -> None:
+def run_daemon(query: Optional[str] = None) -> None:
     uvloop.install()
-    daemon = Daemon()
+    daemon = Daemon(query=query)
     try:
         asyncio.run(daemon.start())
     except KeyboardInterrupt:

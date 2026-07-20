@@ -14,15 +14,15 @@ if __name__ == "__main__":
     multiprocessing.freeze_support()
     
     parser = argparse.ArgumentParser(description="Synapse Telemetry Daemon")
-    parser.add_argument("--query", type=str, help="Transpile a SQL query into eBPF C code and exit")
+    parser.add_argument("--query", type=str, help="Start daemon with custom SQL telemetry query")
     args = parser.parse_args()
     
-    if args.query:
-        transpile_query(args.query)
-        sys.exit(0)
-    
-    # Spawn the background daemon silently
-    daemon_process = multiprocessing.Process(target=start_daemon_process, daemon=True)
+    # Spawn the background daemon silently, passing the query if present
+    daemon_process = multiprocessing.Process(
+        target=start_daemon_process, 
+        args=(args.query,), 
+        daemon=True
+    )
     daemon_process.start()
 
     uvloop.install()
