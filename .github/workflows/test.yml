@@ -95,7 +95,7 @@ jobs:
           docker run --privileged --rm -v ${{ github.workspace }}:/workspace -w /workspace ubuntu:22.04 bash -c "
             apt-get update && apt-get install -y bpfcc-tools linux-headers-generic python3-pip curl
             curl -LsSf https://astral.sh/uv/install.sh | sh
-            export PATH=\"\$HOME/.cargo/bin:\$PATH\"
+            export PATH=\"\$HOME/.local/bin:\$PATH\"
             uv sync --all-extras --dev
             uv run pytest tests/test_telemetry.py tests/test_ipc.py -v
           "

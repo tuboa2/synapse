@@ -5,7 +5,7 @@ description = "Synapse: Cross-platform multi-process Python daemon for local pro
 requires-python = ">=3.12"
 dependencies = [
     "duckdb>=0.10.0",
-    "uvloop>=0.22.1",
+    "uvloop>=0.22.1; sys_platform != 'win32'",
     "psutil",
     "sqlglot>=30.12.0",
 ]
