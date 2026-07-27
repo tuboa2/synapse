@@ -1,5 +1,6 @@
 import abc
-from typing import Any, Dict
+from typing import Any
+
 
 class IPCServer(abc.ABC):
     @abc.abstractmethod
@@ -19,12 +20,12 @@ class IPCClient(abc.ABC):
         pass
 
     @abc.abstractmethod
-    async def send_message(self, message: Dict[str, Any]) -> None:
+    async def send_message(self, message: dict[str, Any]) -> None:
         """Send a JSON-serializable message to the server."""
         pass
 
     @abc.abstractmethod
-    async def receive_message(self) -> Dict[str, Any]:
+    async def receive_message(self) -> dict[str, Any]:
         """Receive a JSON-serializable message from the server."""
         pass
 

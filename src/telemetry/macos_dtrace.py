@@ -1,6 +1,7 @@
 import logging
 import subprocess
-from typing import Optional
+from typing import Any
+
 from .base import ProcessMetrics, TelemetryProvider
 
 logger = logging.getLogger(__name__)
@@ -11,11 +12,11 @@ class MacOSDTraceProvider(TelemetryProvider):
     Ensures safe, low-overhead process observation adhering strictly to Darwin kernel boundaries.
     """
     def __init__(self) -> None:
-        self.dtrace_process: Optional[subprocess.Popen[str]] = None
-        self._procs: dict = {}
-        self._last_io: dict = {}
+        self.dtrace_process: subprocess.Popen[str] | None = None
+        self._procs: dict[int, Any] = {}
+        self._last_io: dict[int, float] = {}
 
-    def initialize(self) -> None:
+    def initialize(self, query: str | None = None) -> None:
         # Notes: DTrace on modern macOS (SIP enabled) restricts heavy kernel tracing.
         # Production deployment assumes careful code-signing or leveraging EndpointSecurity frameworks if DTrace fails.
         logger.info("Initializing macOS DTrace Telemetry hooks...")
@@ -35,7 +36,7 @@ class MacOSDTraceProvider(TelemetryProvider):
             self.dtrace_process = None
             logger.info("macOS DTrace Telemetry safely terminated.")
 
-    def get_metrics(self, pid: int) -> Optional[ProcessMetrics]:
+    def get_metrics(self, pid: int) -> ProcessMetrics | None:
         # Utilizing vm_read/task_for_pid logic directly to poll memory regions dynamically.
         # Due to sandbox limits, falls back cleanly to psutil without crashing the daemon.
         import psutil
@@ -43,23 +44,23 @@ class MacOSDTraceProvider(TelemetryProvider):
             if pid not in self._procs:
                 self._procs[pid] = psutil.Process(pid)
                 self._procs[pid].cpu_percent(interval=None) # Initialize CPU state
-                
+
             proc = self._procs[pid]
             cpu = proc.cpu_percent(interval=None)
             mem_info = proc.memory_info()
-            
+
             io_wait_approx = 0.0
             try:
                 io_counters = proc.io_counters()
                 current_io_bytes = float(getattr(io_counters, 'read_bytes', 0) + getattr(io_counters, 'write_bytes', 0))
-                
+
                 if pid in self._last_io:
                     diff_bytes = max(0.0, current_io_bytes - self._last_io[pid])
                     io_wait_approx = diff_bytes / (512 * 1024)
                 self._last_io[pid] = current_io_bytes
             except (AttributeError, psutil.AccessDenied):
                 pass
-                
+
             gil_approx = 0.0
             try:
                 threads = proc.num_threads()
@@ -67,7 +68,7 @@ class MacOSDTraceProvider(TelemetryProvider):
                     gil_approx = min(999.0, (threads * (cpu / 100.0)) * 2.5)
             except Exception:
                 pass
-                
+
             return ProcessMetrics(
                 pid=pid,
                 name="",

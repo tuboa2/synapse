@@ -1,6 +1,8 @@
 import pytest
+
+from transpiler.emitter import EmitterError, QueryEmitter
 from transpiler.mapper import MappedQuery
-from transpiler.emitter import QueryEmitter, EmitterError
+
 
 def test_emit_linux():
     # Setup a mapped query
@@ -19,10 +21,10 @@ def test_emit_linux():
         },
         aggregations=["COUNT"]
     )
-    
+
     emitter = QueryEmitter()
     code = emitter.emit(query)
-    
+
     assert "BPF_PERF_OUTPUT(events);" in code
     assert "struct event_t {" in code
     assert "u64 pid;" in code
@@ -43,7 +45,7 @@ def test_emit_unsupported_platform():
         where_fields={},
         aggregations=[]
     )
-    
+
     emitter = QueryEmitter()
     with pytest.raises(EmitterError, match="No code generator found for platform 'unknown'"):
         emitter.emit(query)

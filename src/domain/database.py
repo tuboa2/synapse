@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, List, Tuple
+from typing import Any
 
 import duckdb
 
@@ -12,7 +12,7 @@ class TelemetryDatabase:
     DuckDB-backed in-memory datastore for telemetry state.
     Operations are executed in a thread pool to prevent event loop blocking.
     """
-    
+
     def __init__(self, db_path: str = ":memory:") -> None:
         self.db_path = db_path
         self._conn = duckdb.connect(db_path)
@@ -36,22 +36,22 @@ class TelemetryDatabase:
         query = "INSERT INTO process_telemetry VALUES (CURRENT_TIMESTAMP, ?, ?, ?)"
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(
-            self._executor, 
-            self._conn.execute, 
-            query, 
+            self._executor,
+            self._conn.execute,
+            query,
             [pid, cpu, memory]
         )
 
-    async def get_recent_telemetry(self, limit: int = 100) -> List[Tuple[Any, ...]]:
+    async def get_recent_telemetry(self, limit: int = 100) -> list[tuple[Any, ...]]:
         """Asynchronously retrieve recent telemetry records."""
         query = "SELECT timestamp, pid, cpu_usage, memory_usage FROM process_telemetry ORDER BY timestamp DESC LIMIT ?"
         loop = asyncio.get_running_loop()
-        
-        def _fetch() -> List[Tuple[Any, ...]]:
+
+        def _fetch() -> list[tuple[Any, ...]]:
             return self._conn.execute(query, [limit]).fetchall()
-            
+
         return await loop.run_in_executor(self._executor, _fetch)
-        
+
     def close(self) -> None:
         """Shutdown thread pool and close database connection."""
         self._executor.shutdown(wait=True)

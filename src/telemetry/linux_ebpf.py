@@ -1,18 +1,20 @@
-import logging
 import asyncio
-import json
-import os
 import ctypes as ct
-from typing import Any, Optional
-from .base import ProcessMetrics, TelemetryProvider
+import json
+import logging
+import os
+from typing import Any
+
 import sqlglot
 
-from transpiler.validator import ASTValidator
-from transpiler.mapper import ASTMapper
 from transpiler.emitter import QueryEmitter
+from transpiler.mapper import ASTMapper
+from transpiler.validator import ASTValidator
+
+from .base import ProcessMetrics, TelemetryProvider
 
 try:
-    from bcc import BPF  # type: ignore
+    from bcc import BPF
 except ImportError:
     BPF = None
 
@@ -41,7 +43,7 @@ TRACEPOINT_PROBE(block, block_rq_issue) {
 TRACEPOINT_PROBE(block, block_rq_complete) {
     u32 pid = bpf_get_current_pid_tgid();
     u64 *tsp, delta;
-    
+
     tsp = io_start.lookup(&pid);
     if (tsp != 0) {
         delta = bpf_ktime_get_ns() - *tsp;
@@ -60,32 +62,32 @@ class LinuxEBPFProvider(TelemetryProvider):
     Attaches natively to tracepoints with near-zero overhead utilizing bcc-tools.
     """
     def __init__(self) -> None:
-        self.bpf: Optional[Any] = None
-        self._procs: dict = {}
-        self._last_io: dict = {}
-        self._custom_metrics: dict = {}
-        self._loop = None
-        self._fd = None
+        self.bpf: Any | None = None
+        self._procs: dict[int, Any] = {}
+        self._last_io: dict[int, float] = {}
+        self._custom_metrics: dict[int, Any] = {}
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._fd: int | None = None
 
-    def initialize(self, query: Optional[str] = None) -> None:
+    def initialize(self, query: str | None = None) -> None:
         if BPF is None:
             logger.warning("BCC not installed or missing permissions. eBPF Telemetry will simulate fallback data.")
             return
 
         bpf_text = BPF_PROGRAM
-        
+
         if query:
             logger.info("Custom query provided. Transpiling to eBPF...")
             try:
                 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
                 schema_path = os.path.join(base_dir, "schema_registry.json")
                 matrix_path = os.path.join(base_dir, "tracepoint_matrix.json")
-                
-                with open(schema_path, "r") as f:
+
+                with open(schema_path) as f:
                     schema = json.load(f)
-                with open(matrix_path, "r") as f:
+                with open(matrix_path) as f:
                     matrix = json.load(f)
-                
+
                 ast = sqlglot.parse_one(query, dialect="duckdb")
                 ASTValidator(schema).validate(ast)
                 mapped_query = ASTMapper(matrix, platform="linux").map(ast)
@@ -98,7 +100,7 @@ class LinuxEBPFProvider(TelemetryProvider):
         try:
             self.bpf = BPF(text=bpf_text)
             logger.info("eBPF tracepoints attached successfully.")
-            
+
             if query and "events" in self.bpf:
                 # Custom query transpiler uses BPF_PERF_OUTPUT("events")
                 self.bpf["events"].open_perf_buffer(self._handle_perf_event)
@@ -137,7 +139,7 @@ class LinuxEBPFProvider(TelemetryProvider):
             logger.info("eBPF tracepoints cleanly detached from Kernel.")
             self.bpf = None
 
-    def get_metrics(self, pid: int) -> Optional[ProcessMetrics]:
+    def get_metrics(self, pid: int) -> ProcessMetrics | None:
         if self.bpf is None:
             # Fallback using psutil when BCC isn't available
             import psutil
@@ -145,17 +147,17 @@ class LinuxEBPFProvider(TelemetryProvider):
                 if pid not in self._procs:
                     self._procs[pid] = psutil.Process(pid)
                     self._procs[pid].cpu_percent(interval=None) # Initialize CPU state
-                    
+
                 proc = self._procs[pid]
                 cpu = proc.cpu_percent(interval=None)
                 mem_info = proc.memory_info()
-                
+
                 io_wait_approx = 0.0
                 try:
                     io_counters = proc.io_counters()
                     # Use read_bytes and write_bytes delta as a proxy for I/O intensity
                     current_io_bytes = float(getattr(io_counters, 'read_bytes', 0) + getattr(io_counters, 'write_bytes', 0))
-                    
+
                     if pid in self._last_io:
                         diff_bytes = max(0.0, current_io_bytes - self._last_io[pid])
                         # Heuristic: 1ms I/O wait per 512KB transferred (visually responsive for dashboards)
@@ -163,7 +165,7 @@ class LinuxEBPFProvider(TelemetryProvider):
                     self._last_io[pid] = current_io_bytes
                 except (AttributeError, psutil.AccessDenied):
                     pass
-                
+
                 # Estimate GIL contention (Fallback heuristic since native eBPF USDT is unavailable)
                 # GIL contention correlates heavily with number of threads and context switching
                 gil_approx = 0.0
@@ -203,9 +205,9 @@ class LinuxEBPFProvider(TelemetryProvider):
                     io_ns = io_wait_table[pid_c_uint].value if pid_c_uint in io_wait_table else 0
                 except KeyError:
                     pass # Custom program might not have io_wait_time map
-            
+
             # Fast POSIX path for physical memory usage (RSS)
-            with open(f"/proc/{pid}/statm", "r") as f:
+            with open(f"/proc/{pid}/statm") as f:
                 rss_pages = int(f.read().split()[1])
                 memory_mb = (rss_pages * 4096) / (1024 * 1024)
 

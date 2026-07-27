@@ -1,6 +1,8 @@
 import dataclasses
-from typing import Dict, Any, List
+from typing import Any
+
 from sqlglot import expressions as exp
+
 
 class MappingError(Exception):
     pass
@@ -12,12 +14,12 @@ class MappedQuery:
     probe_type: str
     probe_entry: str
     probe_exit: str
-    select_fields: Dict[str, str]
-    where_fields: Dict[str, str]
-    aggregations: List[str]
+    select_fields: dict[str, str]
+    where_fields: dict[str, str]
+    aggregations: list[str]
 
 class ASTMapper:
-    def __init__(self, tracepoint_matrix: Dict[str, Any], platform: str):
+    def __init__(self, tracepoint_matrix: dict[str, Any], platform: str):
         self.matrix = tracepoint_matrix
         self.platform = platform
 
@@ -40,9 +42,9 @@ class ASTMapper:
 
         physical_fields = platform_config.get("fields", {})
 
-        select_fields: Dict[str, str] = {}
-        where_fields: Dict[str, str] = {}
-        aggregations: List[str] = []
+        select_fields: dict[str, str] = {}
+        where_fields: dict[str, str] = {}
+        aggregations: list[str] = []
 
         # Find columns in SELECT
         # sqlglot parsed ASTs have an `args` dict containing the top-level clauses

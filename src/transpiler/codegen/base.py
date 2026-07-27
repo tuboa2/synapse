@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
+
 from transpiler.mapper import MappedQuery
+
 
 class CodeGenerator(ABC):
     @abstractmethod

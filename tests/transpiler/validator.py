@@ -1,6 +1,8 @@
 import pytest
 import sqlglot
+
 from transpiler.validator import ASTValidator, ValidationError
+
 
 @pytest.fixture
 def validator():

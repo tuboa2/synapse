@@ -1,6 +1,6 @@
 import abc
 from dataclasses import dataclass
-from typing import Optional
+
 
 @dataclass
 class ProcessMetrics:
@@ -21,9 +21,9 @@ class TelemetryProvider(abc.ABC):
     The Main Daemon depends entirely on this abstraction, ensuring zero
     coupling to the underlying OS-specific gathering methods (eBPF, DTrace, WMI).
     """
-    
+
     @abc.abstractmethod
-    def initialize(self, query: Optional[str] = None) -> None:
+    def initialize(self, query: str | None = None) -> None:
         """Initialize any system-level probes, memory maps, or hooks required."""
         pass
 
@@ -33,6 +33,6 @@ class TelemetryProvider(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def get_metrics(self, pid: int) -> Optional[ProcessMetrics]:
+    def get_metrics(self, pid: int) -> ProcessMetrics | None:
         """Fetch instantaneous telemetry for a given Process ID."""
         pass

@@ -1,5 +1,6 @@
-from transpiler.mapper import MappedQuery
 from transpiler.codegen.base import CodeGenerator
+from transpiler.mapper import MappedQuery
+
 
 class WindowsGenerator(CodeGenerator):
     def generate(self, query: MappedQuery) -> str:

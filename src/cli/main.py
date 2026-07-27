@@ -1,42 +1,42 @@
-import os
-import sys
+import argparse
+import asyncio
 import json
 import logging
-import asyncio
 import multiprocessing
-import argparse
-from typing import Any, Dict, Optional, List
-
-from ipc.unix_socket import UnixSocketClient
-from ipc.zero_copy import ZeroCopyTelemetryClient
-from daemon.main import run_daemon
-import uvloop
+import os
+import sys
+from typing import Any
 
 import sqlglot
-from transpiler.validator import ASTValidator
-from transpiler.mapper import ASTMapper
+import uvloop
+
+from daemon.main import run_daemon
+from ipc.unix_socket import UnixSocketClient
+from ipc.zero_copy import ZeroCopyTelemetryClient
 from transpiler.emitter import QueryEmitter
+from transpiler.mapper import ASTMapper
+from transpiler.validator import ASTValidator
 
 logger = logging.getLogger("synapse.cli")
 # Disable standard logging output since we'll be taking over the screen
 logging.getLogger().setLevel(logging.ERROR)
 
-def start_daemon_process(query: Optional[str] = None):
+def start_daemon_process(query: str | None = None):
     """Run the daemon in a background process and log to a file."""
     log_file = open("synapse_daemon.log", "a")
     sys.stdout = log_file
     sys.stderr = log_file
-    
+
     root_logger = logging.getLogger()
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
-    
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         stream=log_file
     )
-    
+
     run_daemon(query=query)
 
 
@@ -46,7 +46,7 @@ class IPCWorker:
         self.client = UnixSocketClient(self.socket_path)
         self.shm_client = ZeroCopyTelemetryClient()
 
-    def fetch_telemetry(self) -> List[Dict[str, Any]]:
+    def fetch_telemetry(self) -> list[dict[str, Any]]:
         data_list = self.shm_client.read_telemetry()
         results = []
         for data in data_list:
@@ -72,27 +72,27 @@ class IPCWorker:
 
 async def run_cli() -> None:
     worker = IPCWorker()
-    
+
     # Hide cursor and clear screen
     sys.stdout.write('\033[?25l\033[2J')
     sys.stdout.flush()
-    
+
     try:
         while True:
             telemetry_list = worker.fetch_telemetry()
-            
+
             # Home cursor
             sys.stdout.write('\033[H')
-            
+
             if telemetry_list:
                 output = f"\033[1;36mSYNAPSE TELEMETRY\033[0m  [Tracking {len(telemetry_list)} Python Processes]\n"
                 output += f"{'-'*95}\n"
                 output += f"{'PID':<8} | {'Name':<15} | {'CPU %':<10} | {'Memory (MB)':<12} | {'I/O Wait (ms)':<15} | {'GIL (ms)':<10}\n"
                 output += f"{'-'*95}\n"
-                
+
                 # Sort by CPU usage descending
                 telemetry_list.sort(key=lambda x: x["cpu_usage_percent"], reverse=True)
-                
+
                 for tel in telemetry_list:
                     output += (
                         f"{tel['pid']:<8} | "
@@ -102,20 +102,20 @@ async def run_cli() -> None:
                         f"\033[1;31m{tel['io_wait_ms']:>10} ms\033[0m | "
                         f"\033[1;35m{tel['gil_contention_ms']:>6} ms\033[0m\n"
                     )
-                
+
                 output += f"{'-'*95}\n"
-                output += f"Press Ctrl+C to exit.\n"
+                output += "Press Ctrl+C to exit.\n"
             else:
                 output = "\033[1;33mWaiting for telemetry from Daemon...\033[0m\n\nPress Ctrl+C to exit.\n"
-            
+
             # Clear to end of screen to avoid trailing characters
             output += "\033[J"
-            
+
             sys.stdout.write(output)
             sys.stdout.flush()
-            
+
             await asyncio.sleep(0.5)
-            
+
     except asyncio.CancelledError:
         pass
     finally:
@@ -128,34 +128,34 @@ def transpile_query(query: str) -> None:
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     schema_path = os.path.join(base_dir, "schema_registry.json")
     matrix_path = os.path.join(base_dir, "tracepoint_matrix.json")
-    
-    with open(schema_path, "r") as f:
+
+    with open(schema_path) as f:
         schema = json.load(f)
-    with open(matrix_path, "r") as f:
+    with open(matrix_path) as f:
         matrix = json.load(f)
-        
-    print(f"\033[1;36m[Transpiler] Parsing SQL query...\033[0m")
+
+    print("\033[1;36m[Transpiler] Parsing SQL query...\033[0m")
     try:
         # 1. Parse
         ast = sqlglot.parse_one(query, dialect="duckdb")
-        
+
         # 2. Validate
         validator = ASTValidator(schema)
         validator.validate(ast)
-        print(f"\033[1;32m[Transpiler] Validation Passed.\033[0m")
-        
+        print("\033[1;32m[Transpiler] Validation Passed.\033[0m")
+
         # 3. Map
         mapper = ASTMapper(matrix, platform="linux")
         mapped_query = mapper.map(ast)
-        print(f"\033[1;32m[Transpiler] Mapping Passed (Platform: linux).\033[0m")
-        
+        print("\033[1;32m[Transpiler] Mapping Passed (Platform: linux).\033[0m")
+
         # 4. Emit
         emitter = QueryEmitter()
         code = emitter.emit(mapped_query)
-        print(f"\n\033[1;33m--- Generated eBPF C Code ---\033[0m\n")
+        print("\n\033[1;33m--- Generated eBPF C Code ---\033[0m\n")
         print(code)
-        print(f"\033[1;33m-----------------------------\033[0m\n")
-        
+        print("\033[1;33m-----------------------------\033[0m\n")
+
     except Exception as e:
         print(f"\033[1;31m[Transpiler Error] {e}\033[0m")
         sys.exit(1)
@@ -163,15 +163,15 @@ def transpile_query(query: str) -> None:
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()
-    
+
     parser = argparse.ArgumentParser(description="Synapse Telemetry Daemon")
     parser.add_argument("--query", type=str, help="Transpile a SQL query into eBPF C code and exit")
     args = parser.parse_args()
-    
+
     if args.query:
         transpile_query(args.query)
         sys.exit(0)
-    
+
     # Spawn the background daemon silently
     daemon_process = multiprocessing.Process(target=start_daemon_process, daemon=True)
     daemon_process.start()
