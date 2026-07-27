@@ -1,7 +1,10 @@
 import pytest
 import sqlglot
-from hypothesis import given, strategies as st
-from transpiler.validator import ASTValidator, ValidationError
+from hypothesis import given
+from hypothesis import strategies as st
+
+from transpiler.validator import ASTValidator
+
 
 @pytest.fixture
 def validator():
@@ -41,10 +44,10 @@ def test_valid_sql_property(aggregations, select_cols, where_col):
     }
     validator = ASTValidator(schema)
     # Construct a valid SQL string
-    aggs = [f"{agg}({col})" for agg, col in zip(aggregations, select_cols)]
+    aggs = [f"{agg}({col})" for agg, col in zip(aggregations, select_cols, strict=False)]
     select_clause = ", ".join(aggs + select_cols)
     sql = f"SELECT {select_clause} FROM syscalls WHERE {where_col} = 'test'"
-    
+
     ast = sqlglot.parse_one(sql, read="duckdb")
     # Should never raise ValidationError for these valid combinations
     validator.validate(ast)
