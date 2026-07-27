@@ -1,7 +1,8 @@
+import contextlib
+import logging
 import struct
 from multiprocessing import shared_memory
-from typing import Optional, NamedTuple, List
-import logging
+from typing import NamedTuple
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ class ZeroCopyTelemetryServer:
     """Manages the shared memory block on the daemon side for writing telemetry."""
     def __init__(self, name: str = SHM_NAME):
         self.name = name
-        self.shm: Optional[shared_memory.SharedMemory] = None
+        self.shm: shared_memory.SharedMemory | None = None
 
     def initialize(self) -> None:
         try:
@@ -50,17 +51,17 @@ class ZeroCopyTelemetryServer:
             old_shm.close()
             self.shm = shared_memory.SharedMemory(name=self.name, create=True, size=STRUCT_SIZE)
 
-    def write_telemetry(self, data_list: List[TelemetryData]) -> None:
+    def write_telemetry(self, data_list: list[TelemetryData]) -> None:
         if not self.shm:
             return
-        
+
         # Cap to MAX_PROCESSES
         data_list = data_list[:MAX_PROCESSES]
         count = len(data_list)
-        
+
         # Pack header (count)
         self.shm.buf[:HEADER_SIZE] = struct.pack(HEADER_FORMAT, count)
-        
+
         # Pack items
         offset = HEADER_SIZE
         for data in data_list:
@@ -81,17 +82,15 @@ class ZeroCopyTelemetryServer:
     def cleanup(self) -> None:
         if self.shm:
             self.shm.close()
-            try:
+            with contextlib.suppress(FileNotFoundError):
                 self.shm.unlink()
-            except FileNotFoundError:
-                pass
             self.shm = None
 
 class ZeroCopyTelemetryClient:
     """Reads the shared memory block on the UI side."""
     def __init__(self, name: str = SHM_NAME):
         self.name = name
-        self.shm: Optional[shared_memory.SharedMemory] = None
+        self.shm: shared_memory.SharedMemory | None = None
 
     def connect(self) -> bool:
         if self.shm is not None:
@@ -102,25 +101,24 @@ class ZeroCopyTelemetryClient:
         except FileNotFoundError:
             return False
 
-    def read_telemetry(self) -> List[TelemetryData]:
-        if not self.shm:
-            if not self.connect():
-                return []
-        
+    def read_telemetry(self) -> list[TelemetryData]:
+        if not self.shm and not self.connect():
+            return []
+
         try:
             raw_header = self.shm.buf[:HEADER_SIZE]
             count = struct.unpack(HEADER_FORMAT, raw_header)[0]
-            
+
             # Sanity check count
             if count > MAX_PROCESSES or count < 0:
                 return []
-                
+
             results = []
             offset = HEADER_SIZE
             for _ in range(count):
                 raw_item = self.shm.buf[offset:offset+ITEM_SIZE]
                 unpacked = struct.unpack(ITEM_FORMAT, raw_item)
-                
+
                 name_str = unpacked[2].decode('utf-8', errors='ignore').rstrip('\x00')
                 results.append(TelemetryData(
                     timestamp=unpacked[0],
@@ -132,7 +130,7 @@ class ZeroCopyTelemetryClient:
                     gil_contention_ms=unpacked[6]
                 ))
                 offset += ITEM_SIZE
-                
+
             return results
         except struct.error:
             logger.error("Failed to unpack struct from shared memory")

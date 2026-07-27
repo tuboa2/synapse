@@ -1,9 +1,9 @@
 import logging
-from typing import Optional
+
 from .base import ProcessMetrics, TelemetryProvider
 
 try:
-    import psutil # type: ignore
+    import psutil  # type: ignore
 except ImportError:
     psutil = None
 
@@ -23,7 +23,7 @@ class WindowsWMIProvider(TelemetryProvider):
         if psutil is None:
             logger.warning("psutil not installed. Windows Telemetry will simulate fallback data.")
             return
-            
+
         # Placeholder for complex WMI / ETW COM object initialization
         self.initialized = True
         logger.info("Windows WMI/psutil Telemetry interfaces initialized.")
@@ -32,7 +32,7 @@ class WindowsWMIProvider(TelemetryProvider):
         self.initialized = False
         logger.info("Windows Telemetry handles released.")
 
-    def get_metrics(self, pid: int) -> Optional[ProcessMetrics]:
+    def get_metrics(self, pid: int) -> ProcessMetrics | None:
         if not self.initialized or psutil is None:
             return ProcessMetrics(
                 pid=pid,
@@ -47,24 +47,24 @@ class WindowsWMIProvider(TelemetryProvider):
             if pid not in self._procs:
                 self._procs[pid] = psutil.Process(pid)
                 self._procs[pid].cpu_percent(interval=None) # Initialize CPU state
-                
+
             proc = self._procs[pid]
             cpu = proc.cpu_percent(interval=None) # Non-blocking differential CPU slice
             mem_info = proc.memory_info()
-            
+
             # WMI equivalent logic: extracting read/write timing via counters
             io_wait_approx = 0.0
             try:
                 io_counters = proc.io_counters()
                 current_io_bytes = float(getattr(io_counters, 'read_bytes', 0) + getattr(io_counters, 'write_bytes', 0))
-                
+
                 if pid in self._last_io:
                     diff_bytes = max(0.0, current_io_bytes - self._last_io[pid])
                     io_wait_approx = diff_bytes / (512 * 1024)
                 self._last_io[pid] = current_io_bytes
             except (AttributeError, psutil.AccessDenied):
                 pass
-                
+
             gil_approx = 0.0
             try:
                 threads = proc.num_threads()

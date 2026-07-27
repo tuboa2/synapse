@@ -1,8 +1,10 @@
 import asyncio
+import contextlib
 import json
 import logging
 import os
-from typing import Any, Awaitable, Callable, Dict, Optional
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from .base import IPCClient, IPCServer
 
@@ -12,11 +14,11 @@ class UnixSocketServer(IPCServer):
     def __init__(
         self,
         socket_path: str,
-        message_handler: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]]
+        message_handler: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
     ) -> None:
         self.socket_path = socket_path
         self.message_handler = message_handler
-        self._server: Optional[asyncio.Server] = None
+        self._server: asyncio.Server | None = None
 
     async def start(self) -> None:
         # Ensure stale socket file is removed before binding
@@ -40,13 +42,13 @@ class UnixSocketServer(IPCServer):
                 data = await reader.readline()
                 if not data:
                     break
-                
+
                 try:
                     message = json.loads(data.decode("utf-8"))
                 except json.JSONDecodeError:
                     logger.warning("Received invalid JSON payload")
                     continue
-                
+
                 response = await self.message_handler(message)
                 response_data = json.dumps(response).encode("utf-8") + b"\n"
                 writer.write(response_data)
@@ -66,29 +68,27 @@ class UnixSocketServer(IPCServer):
             await self._server.wait_closed()
             logger.info("Unix IPC Server stopped")
             if os.path.exists(self.socket_path):
-                try:
+                with contextlib.suppress(OSError):
                     os.unlink(self.socket_path)
-                except OSError:
-                    pass
 
 class UnixSocketClient(IPCClient):
     def __init__(self, socket_path: str) -> None:
         self.socket_path = socket_path
-        self._reader: Optional[asyncio.StreamReader] = None
-        self._writer: Optional[asyncio.StreamWriter] = None
+        self._reader: asyncio.StreamReader | None = None
+        self._writer: asyncio.StreamWriter | None = None
 
     async def connect(self) -> None:
         self._reader, self._writer = await asyncio.open_unix_connection(self.socket_path)
         logger.debug(f"Connected to IPC server at {self.socket_path}")
 
-    async def send_message(self, message: Dict[str, Any]) -> None:
+    async def send_message(self, message: dict[str, Any]) -> None:
         if not self._writer:
             raise ConnectionError("Client is not connected")
         data = json.dumps(message).encode("utf-8") + b"\n"
         self._writer.write(data)
         await self._writer.drain()
 
-    async def receive_message(self) -> Dict[str, Any]:
+    async def receive_message(self) -> dict[str, Any]:
         if not self._reader:
             raise ConnectionError("Client is not connected")
         data = await self._reader.readline()

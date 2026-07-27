@@ -1,18 +1,19 @@
 import asyncio
 import logging
 import signal
-from typing import Any, Dict, Optional
-
-from domain.database import TelemetryDatabase
-from ipc.unix_socket import UnixSocketServer
-from telemetry.factory import create_telemetry_provider
-from ipc.zero_copy import ZeroCopyTelemetryServer, TelemetryData, SHM_NAME
-from daemon.discovery import ProcessDiscovery
 import time
+from typing import Any
+
 import uvloop
 
+from daemon.discovery import ProcessDiscovery
+from domain.database import TelemetryDatabase
+from ipc.unix_socket import UnixSocketServer
+from ipc.zero_copy import SHM_NAME, TelemetryData, ZeroCopyTelemetryServer
+from telemetry.factory import create_telemetry_provider
+
 logging.basicConfig(
-    level=logging.INFO, 
+    level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger("synapse.daemon")
@@ -22,7 +23,7 @@ class Daemon:
     Background Daemon orchestrating telemetry collection and IPC handling.
     Runs completely decoupled from the UI.
     """
-    def __init__(self, socket_path: str = "/tmp/synapse.sock", query: Optional[str] = None) -> None:
+    def __init__(self, socket_path: str = "/tmp/synapse.sock", query: str | None = None) -> None:
         self.socket_path = socket_path
         self.query = query
         self.db = TelemetryDatabase()
@@ -31,17 +32,17 @@ class Daemon:
         self.shm_server = ZeroCopyTelemetryServer()
         self._running = False
         self._telemetry_task: asyncio.Task[None] | None = None
-        
-    async def handle_ipc_message(self, message: Dict[str, Any]) -> Dict[str, Any]:
+
+    async def handle_ipc_message(self, message: dict[str, Any]) -> dict[str, Any]:
         """Process incoming IPC messages from the UI Controller."""
         command = message.get("command")
         logger.debug(f"Received IPC command: {command}")
-        
+
         if command == "ping":
             return {"status": "ok", "message": "pong"}
         elif command == "get_telemetry":
             return {"status": "ok", "shm_name": SHM_NAME}
-                
+
         return {"status": "error", "message": "unknown command"}
 
     async def _telemetry_loop(self) -> None:
@@ -56,10 +57,10 @@ class Daemon:
             while self._running:
                 python_procs = ProcessDiscovery.get_python_pids()
                 shm_data_list = []
-                
+
                 for pid, script_name in python_procs:
                     metrics = self.telemetry_engine.get_metrics(pid)
-                    
+
                     if metrics:
                         shm_data = TelemetryData(
                             timestamp=time.time(),
@@ -73,13 +74,13 @@ class Daemon:
                         shm_data_list.append(shm_data)
 
                         await self.db.insert_telemetry(
-                            pid=metrics.pid, 
-                            cpu=metrics.cpu_usage_percent, 
+                            pid=metrics.pid,
+                            cpu=metrics.cpu_usage_percent,
                             memory=metrics.memory_usage_mb
                         )
-                
+
                 self.shm_server.write_telemetry(shm_data_list)
-                
+
                 # Yield control to event loop; prevents CPU hogging
                 await asyncio.sleep(1.0)
         except asyncio.CancelledError:
@@ -94,7 +95,7 @@ class Daemon:
         """Initialize server and begin telemetry aggregation."""
         self._running = True
         await self.server.start()
-        
+
         # Setup graceful shutdown handlers
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
@@ -104,10 +105,10 @@ class Daemon:
                 pass # Windows fallback ignores signal handler limitation
 
         logger.info("Daemon started successfully")
-        
+
         # Launch non-blocking telemetry loop
         self._telemetry_task = asyncio.create_task(self._telemetry_loop())
-        
+
         try:
             # Keep the main daemon task alive
             while self._running:
@@ -121,19 +122,19 @@ class Daemon:
         """Gracefully terminate background tasks and resources."""
         if not self._running:
             return
-        
+
         logger.info("Initiating daemon shutdown...")
         self._running = False
-        
+
         if self._telemetry_task:
             self._telemetry_task.cancel()
-            
+
         await self.server.stop()
         self.db.close()
         logger.info("Daemon shutdown complete")
 
 
-def run_daemon(query: Optional[str] = None) -> None:
+def run_daemon(query: str | None = None) -> None:
     uvloop.install()
     daemon = Daemon(query=query)
     try:

@@ -1,5 +1,6 @@
 import logging
 import platform
+
 from .base import TelemetryProvider
 
 logger = logging.getLogger(__name__)
@@ -10,7 +11,7 @@ def create_telemetry_provider() -> TelemetryProvider:
     The invoking daemon only ever interacts with the abstract TelemetryProvider interface.
     """
     system = platform.system().lower()
-    
+
     if system == "linux":
         logger.info("Platform detected: Linux. Bootstrapping native eBPF Telemetry Engine.")
         from .linux_ebpf import LinuxEBPFProvider
