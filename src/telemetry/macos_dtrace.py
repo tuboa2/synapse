@@ -1,5 +1,6 @@
 import logging
 import subprocess
+from typing import Any
 
 from .base import ProcessMetrics, TelemetryProvider
 
@@ -12,10 +13,10 @@ class MacOSDTraceProvider(TelemetryProvider):
     """
     def __init__(self) -> None:
         self.dtrace_process: subprocess.Popen[str] | None = None
-        self._procs: dict = {}
-        self._last_io: dict = {}
+        self._procs: dict[int, Any] = {}
+        self._last_io: dict[int, float] = {}
 
-    def initialize(self) -> None:
+    def initialize(self, query: str | None = None) -> None:
         # Notes: DTrace on modern macOS (SIP enabled) restricts heavy kernel tracing.
         # Production deployment assumes careful code-signing or leveraging EndpointSecurity frameworks if DTrace fails.
         logger.info("Initializing macOS DTrace Telemetry hooks...")

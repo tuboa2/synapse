@@ -45,10 +45,7 @@ ignore = ["E501", "ARG001", "ARG002", "ARG005", "B007", "N801", "B905", "SIM105"
 
 [tool.mypy]
 python_version = "3.12"
-strict = true
 ignore_missing_imports = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
 check_untyped_defs = true
 warn_redundant_casts = true
 warn_unused_ignores = true

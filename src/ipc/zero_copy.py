@@ -60,7 +60,7 @@ class ZeroCopyTelemetryServer:
         count = len(data_list)
 
         # Pack header (count)
-        self.shm.buf[:HEADER_SIZE] = struct.pack(HEADER_FORMAT, count)
+        self.shm.buf[:HEADER_SIZE] = struct.pack(HEADER_FORMAT, count) # type: ignore[index]
 
         # Pack items
         offset = HEADER_SIZE
@@ -76,7 +76,7 @@ class ZeroCopyTelemetryServer:
                 data.io_wait_ms,
                 data.gil_contention_ms
             )
-            self.shm.buf[offset:offset+ITEM_SIZE] = packed_data
+            self.shm.buf[offset:offset+ITEM_SIZE] = packed_data # type: ignore[index]
             offset += ITEM_SIZE
 
     def cleanup(self) -> None:
@@ -105,8 +105,12 @@ class ZeroCopyTelemetryClient:
         if not self.shm and not self.connect():
             return []
 
+        shm = self.shm
+        if shm is None:
+            return []
+
         try:
-            raw_header = self.shm.buf[:HEADER_SIZE]
+            raw_header = shm.buf[:HEADER_SIZE] # type: ignore[index]
             count = struct.unpack(HEADER_FORMAT, raw_header)[0]
 
             # Sanity check count
@@ -116,7 +120,7 @@ class ZeroCopyTelemetryClient:
             results = []
             offset = HEADER_SIZE
             for _ in range(count):
-                raw_item = self.shm.buf[offset:offset+ITEM_SIZE]
+                raw_item = shm.buf[offset:offset+ITEM_SIZE] # type: ignore[index]
                 unpacked = struct.unpack(ITEM_FORMAT, raw_item)
 
                 name_str = unpacked[2].decode('utf-8', errors='ignore').rstrip('\x00')

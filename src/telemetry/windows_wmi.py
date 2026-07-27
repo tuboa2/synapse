@@ -1,9 +1,10 @@
 import logging
+from typing import Any
 
 from .base import ProcessMetrics, TelemetryProvider
 
 try:
-    import psutil  # type: ignore
+    import psutil
 except ImportError:
     psutil = None
 
@@ -16,10 +17,10 @@ class WindowsWMIProvider(TelemetryProvider):
     """
     def __init__(self) -> None:
         self.initialized = False
-        self._procs: dict = {}
-        self._last_io: dict = {}
+        self._procs: dict[int, Any] = {}
+        self._last_io: dict[int, float] = {}
 
-    def initialize(self) -> None:
+    def initialize(self, query: str | None = None) -> None:
         if psutil is None:
             logger.warning("psutil not installed. Windows Telemetry will simulate fallback data.")
             return

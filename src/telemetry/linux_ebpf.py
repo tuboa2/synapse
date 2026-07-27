@@ -14,7 +14,7 @@ from transpiler.validator import ASTValidator
 from .base import ProcessMetrics, TelemetryProvider
 
 try:
-    from bcc import BPF  # type: ignore
+    from bcc import BPF
 except ImportError:
     BPF = None
 
@@ -63,11 +63,11 @@ class LinuxEBPFProvider(TelemetryProvider):
     """
     def __init__(self) -> None:
         self.bpf: Any | None = None
-        self._procs: dict = {}
-        self._last_io: dict = {}
-        self._custom_metrics: dict = {}
-        self._loop = None
-        self._fd = None
+        self._procs: dict[int, Any] = {}
+        self._last_io: dict[int, float] = {}
+        self._custom_metrics: dict[int, Any] = {}
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._fd: int | None = None
 
     def initialize(self, query: str | None = None) -> None:
         if BPF is None:
