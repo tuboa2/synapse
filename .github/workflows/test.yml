@@ -1,0 +1,101 @@
+name: Cross-Platform Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    types: [ opened, synchronize, reopened, labeled ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: "pyproject.toml"
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+      - name: Run Ruff
+        run: uv run ruff check .
+      - name: Run Mypy
+        run: uv run mypy .
+
+  unit-tests:
+    needs: lint-and-typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: "pyproject.toml"
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+      - name: Run Unit Tests
+        run: uv run pytest tests/test_transpiler/ -v
+
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.filter.outputs.matrix }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dorny/paths-filter@v3
+      id: filter
+      with:
+        filters: |
+          matrix:
+            - 'src/telemetry/**'
+            - 'src/ipc/**'
+            - 'tests/test_telemetry.py'
+            - 'tests/test_ipc.py'
+
+  integration-matrix:
+    needs: [unit-tests, changes]
+    if: contains(github.event.pull_request.labels.*.name, 'ci:full-matrix') || needs.changes.outputs.matrix == 'true' || github.ref == 'refs/heads/main' || github.event_name == 'push'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: "pyproject.toml"
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Run Windows/macOS Integration Tests
+        if: matrix.os != 'ubuntu-latest'
+        run: uv run pytest tests/test_telemetry.py tests/test_ipc.py -v
+
+      - name: Run Linux eBPF Integration Tests in Privileged Docker
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          docker run --privileged --rm -v ${{ github.workspace }}:/workspace -w /workspace ubuntu:22.04 bash -c "
+            apt-get update && apt-get install -y bpfcc-tools linux-headers-generic python3-pip curl
+            curl -LsSf https://astral.sh/uv/install.sh | sh
+            export PATH=\"\$HOME/.cargo/bin:\$PATH\"
+            uv sync --all-extras --dev
+            uv run pytest tests/test_telemetry.py tests/test_ipc.py -v
+          "
