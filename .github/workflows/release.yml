@@ -40,7 +40,7 @@ jobs:
           enable-cache: true
           
       - name: Install Python Dependencies
-        run: uv sync
+        run: uv sync --all-extras
 
       - name: Build Application
         shell: bash

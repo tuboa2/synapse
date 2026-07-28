@@ -53,7 +53,7 @@ case "$OS" in
     # Onefile can also be used if a single binary is desired, but standalone is better for size debugging.
     NUITKA_PLATFORM_FLAGS=(
       "--clang"
-      # "--linux-icon=assets/icon.png" # Scaffolded
+      "--include-package=uvloop"
     )
     ;;
   Darwin*)
@@ -64,6 +64,7 @@ case "$OS" in
       "--macos-create-app-bundle"
       "--macos-app-name=Synapse"
       "--macos-app-mode=gui"
+      "--include-package=uvloop"
     )
     ;;
   CYGWIN*|MINGW32*|MSYS*|MINGW*)
@@ -71,7 +72,6 @@ case "$OS" in
     OUTPUT_NAME="Synapse.exe"
     NUITKA_PLATFORM_FLAGS=(
       "--windows-console-mode=disable"
-      "--windows-icon-from-ico=assets/icon.ico"
     )
     ;;
   *)
@@ -91,7 +91,6 @@ log_info "Initializing Nuitka Compilation..."
 # --lto=no: Link-Time Optimization is disabled for BRUTAL build speed. (Change to 'yes' only for final production releases).
 # --clang: Forces the use of the Clang compiler, which compiles Nuitka's generated C code significantly faster than GCC/MSVC.
 # --jobs: Maximizes parallel compilation using all available logical CPU cores.
-# --enable-plugin=pyside6: Specifically hooks into PySide6 to bundle Qt QML/C++ libraries correctly.
 # --nofollow-import-to: Aggressive static tree-shaking to prevent bloating the binary with unused standard libraries.
 # --remove-output: Cleans up the massive C++ build cache after successful compilation to save disk space.
 # --output-dir: Routes output cleanly to the dist/ folder.
@@ -113,17 +112,10 @@ elif [[ "$OS" == "Darwin"* ]]; then
   export CFLAGS="-O3"
 fi
 
-# Fix for Nuitka patchelf bug with PySide6 leftover object files
-if [[ -d ".venv" ]]; then
-  log_info "Cleaning PySide6 leftover object files to prevent patchelf errors..."
-  find .venv -name "*.o" -type f -delete
-fi
-
 uv run nuitka \
   --onefile \
   --lto=no \
   --jobs="$CORES" \
-  --include-package=uvloop \
   --nofollow-import-to=tkinter \
   --nofollow-import-to=unittest \
   --nofollow-import-to=http \

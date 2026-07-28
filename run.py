@@ -3,8 +3,6 @@ import multiprocessing
 import os
 import sys
 
-import uvloop
-
 # Ensure src is in the python path for absolute imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
@@ -28,6 +26,8 @@ if __name__ == "__main__":
     )
     daemon_process.start()
 
-    uvloop.install()
+    if sys.platform != "win32":
+        import uvloop
+        uvloop.install()
     with contextlib.suppress(KeyboardInterrupt):
         asyncio.run(run_cli())
